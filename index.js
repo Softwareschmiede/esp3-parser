@@ -16,6 +16,10 @@ class ESP3Parser extends Transform {
         }
 
         // Header
+        if (buffer.length < 6) { // syncByte + dataLengthBuf + optionalLengthBuf + packetTypeBuf + crc8h
+            console.log('Buffer has an invaild length for parsing header. Length: ' + buffer.length.toString());
+            callback();
+        }
         const dataLengthBuf = Buffer.from(buffer.slice(1, 3)); // Size = 2 Bytes
         const optionalLengthBuf = Buffer.from(buffer.slice(3, 4)); // Size = 1 Byte
         const packetTypeBuf = Buffer.from(buffer.slice(4, 5)); // Size = 1 Byte
@@ -32,11 +36,21 @@ class ESP3Parser extends Transform {
         // Data
         const dataOffset = 6;
         const dataLength = dataLengthBuf.readUInt16BE(0);
+
+        if (buffer.length < dataOffset + dataLength) {
+            console.log('Buffer has an invaild length for parsing data. Length: ' + buffer.length.toString());
+            callback();
+        }
         const dataBuf = Buffer.from(buffer.slice(dataOffset, dataOffset + dataLength));
 
         // Optional Data
         const optionalDataOffset = dataOffset + dataLength;
         const optionalLength = optionalLengthBuf.readUInt8(0);
+
+        if (buffer.length < optionalDataOffset + optionalLength + 1) { // optionalDataOffset + optionalLength + crc8d
+            console.log('Buffer has an invaild length for parsing optional data. Length: ' + buffer.length.toString());
+            callback();
+        }
         const optionalDataBuf = Buffer.from(buffer.slice(optionalDataOffset, optionalDataOffset + optionalLength));
 
         // CRC8 Data + Optional Data

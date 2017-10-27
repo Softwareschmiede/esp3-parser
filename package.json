@@ -1,6 +1,6 @@
 {
   "name": "esp3-parser",
-  "version": "0.0.4",
+  "version": "0.0.5",
   "description": "An EnOcean Serial Protocol 3 parser",
   "main": "index.js",
   "scripts": {
