@@ -17,5 +17,9 @@ Then pipe it to serialport.
 This parser only validates if a packet is a vaild ESP3 packet.
 
 ## Changes
+### 0.0.6
+Splitted packets will be concated.
+Safe-Buffer will be used.
+
 ### 0.0.5
 Catch if the length of the buffer isn't correct.

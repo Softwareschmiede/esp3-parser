@@ -1,72 +1,82 @@
 const Transform = require('stream').Transform;
+const Buffer = require('safe-buffer').Buffer;
 
 // Only checks if the received packet is a valid esp3 packet
 class ESP3Parser extends Transform {
     constructor() {
         super();
+
+        this.buffer = Buffer.alloc(0);
     }
 
-    _transform(buffer, encoding, callback) {
+    _transform(chunk, encoding, callback) {
+        const packet = Buffer.concat([this.buffer, chunk]);
+
         // Sync Byte - Every ESP3 packet starts with 55
-        const syncByte = buffer.toString('hex', 0, 1); // Size = 1 Byte
+        const syncByte = packet.toString('hex', 0, 1); // Size = 1 Byte
 
         if (syncByte !== '55') {
-            console.log('Sync byte not 55');
-            callback();
+            callback(new Error('Sync byte not 55'));
         }
 
-        // Header
-        if (buffer.length < 6) { // syncByte + dataLengthBuf + optionalLengthBuf + packetTypeBuf + crc8h
-            console.log('Buffer has an invaild length for parsing header. Length: ' + buffer.length.toString());
+        if (packet.length < 6) { // syncByte + header + crc8h
+            this.buffer = packet;
             callback();
+        } else {
+            // Header
+            const dataLengthBuf = Buffer.from(packet.slice(1, 3)); // Size = 2 Bytes
+            const optionalLengthBuf = Buffer.from(packet.slice(3, 4)); // Size = 1 Byte
+            const packetTypeBuf = Buffer.from(packet.slice(4, 5)); // Size = 1 Byte
+
+            // CRC8 Header
+            const crc8h = packet.readUInt8(5); // Size = 1 Byte
+            const calcCrc8h = crc8(Buffer.concat([dataLengthBuf, optionalLengthBuf, packetTypeBuf]));
+
+            if (crc8h !== calcCrc8h) {
+                callback(new Error('CRC8H not valid'));
+            }
+
+            // Data
+            const dataOffset = 6;
+            const dataLength = dataLengthBuf.readUInt16BE(0);
+
+            if (packet.length < dataOffset + dataLength) {
+                this.buffer = packet;
+                callback();
+            } else {
+                const dataBuf = Buffer.from(packet.slice(dataOffset, dataOffset + dataLength));
+
+                // Optional Data
+                const optionalDataOffset = dataOffset + dataLength;
+                const optionalLength = optionalLengthBuf.readUInt8(0);
+
+                if (packet.length < optionalDataOffset + optionalLength + 1) { // optionalDataOffset + optionalLength + crc8d
+                    this.buffer = packet;
+                    callback();
+                } else {
+                    const optionalDataBuf = Buffer.from(packet.slice(optionalDataOffset, optionalDataOffset + optionalLength));
+
+                    // CRC8 Data + Optional Data
+                    const crc8d = packet.readUInt8(optionalDataOffset + optionalLength);
+                    const calcCrc8d = crc8(Buffer.concat([dataBuf, optionalDataBuf]));
+
+                    if (crc8d !== calcCrc8d) {
+                        callback(new Error('CRC8D not vaild'));
+                    }
+
+                    if (packet.length > optionalDataOffset + optionalLength + 1) {
+                        this.buffer = Buffer.from(packet.slice(optionalDataOffset + optionalLength + 1));
+                    } else {
+                        this.buffer = Buffer.alloc(0);
+                    }
+
+                    callback(null, packet);
+                }
+            }
         }
-        const dataLengthBuf = Buffer.from(buffer.slice(1, 3)); // Size = 2 Bytes
-        const optionalLengthBuf = Buffer.from(buffer.slice(3, 4)); // Size = 1 Byte
-        const packetTypeBuf = Buffer.from(buffer.slice(4, 5)); // Size = 1 Byte
-
-        // CRC8 Header
-        const crc8h = buffer.readUInt8(5); // Size = 1 Byte
-        const calcCrc8h = crc8(Buffer.concat([dataLengthBuf, optionalLengthBuf, packetTypeBuf]));
-
-        if (crc8h !== calcCrc8h) {
-            console.log('CRC8H not valid');
-            callback();
-        }
-
-        // Data
-        const dataOffset = 6;
-        const dataLength = dataLengthBuf.readUInt16BE(0);
-
-        if (buffer.length < dataOffset + dataLength) {
-            console.log('Buffer has an invaild length for parsing data. Length: ' + buffer.length.toString());
-            callback();
-        }
-        const dataBuf = Buffer.from(buffer.slice(dataOffset, dataOffset + dataLength));
-
-        // Optional Data
-        const optionalDataOffset = dataOffset + dataLength;
-        const optionalLength = optionalLengthBuf.readUInt8(0);
-
-        if (buffer.length < optionalDataOffset + optionalLength + 1) { // optionalDataOffset + optionalLength + crc8d
-            console.log('Buffer has an invaild length for parsing optional data. Length: ' + buffer.length.toString());
-            callback();
-        }
-        const optionalDataBuf = Buffer.from(buffer.slice(optionalDataOffset, optionalDataOffset + optionalLength));
-
-        // CRC8 Data + Optional Data
-        const crc8d = buffer.readUInt8(optionalDataOffset + optionalLength);
-        const calcCrc8d = crc8(Buffer.concat([dataBuf, optionalDataBuf]));
-
-        if (crc8d !== calcCrc8d) {
-            console.log('CRC8D not vaild');
-            callback();
-        }
-
-        this.push(buffer);
-
-        callback();
     }
 }
+
 
 function crc8(buffer) {
     const u8CRC8Table = [
